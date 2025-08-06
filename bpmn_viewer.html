@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>BPMN Viewer</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/bpmn-js@17.0.2/dist/assets/bpmn-js.css"
+    />
+    <style>
+      /* Estilos para garantir que o diagrama ocupe todo o espaço */
+      html,
+      body,
+      #container {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        background-color: #fafafa;
+      }
+      .error-message {
+        font-family: sans-serif;
+        padding: 20px;
+        color: #b94a48;
+        background-color: #f2dede;
+        border: 1px solid #ebccd1;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container"></div>
+
+    <script src="https://unpkg.com/bpmn-js@17.0.2/dist/bpmn-navigated-viewer.development.js"></script>
+
+    <script>
+      const container = document.getElementById("container");
+      const viewer = new BpmnJS({ container: container });
+
+      // 1. Adiciona um "ouvinte" para a mensagem que virá da janela principal
+      window.addEventListener("message", async (event) => {
+        // Opcional, mas boa prática: verificar a origem da mensagem
+        // if (event.origin !== 'https://seu-usuario.github.io') return;
+
+        const xml = event.data; // Este é o conteúdo XML do IFLW
+
+        if (xml && typeof xml === "string") {
+          try {
+            // 2. Tenta importar e renderizar o XML recebido
+            await viewer.importXML(xml);
+            viewer.get("canvas").zoom("fit-viewport");
+          } catch (err) {
+            console.error("Erro ao renderizar o diagrama BPMN:", err);
+            container.innerHTML = `<div class="error-message"><strong>Erro ao renderizar o diagrama:</strong><br>${err.message}</div>`;
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
