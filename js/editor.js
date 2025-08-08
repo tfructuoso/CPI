@@ -422,8 +422,8 @@ function buildProjectView(xmlContent) {
 
   let html = `<h3>${t("project_details_title")}</h3>
                 <p><strong>${t("project_name_label")}</strong> ${escapeHtml(
-                  projectName
-                )}</p>`;
+    projectName
+  )}</p>`;
 
   if (comment) {
     html += `<p><strong>${t("project_comment_label")}</strong> ${escapeHtml(comment)}</p>`;
@@ -521,24 +521,24 @@ function buildPropView(propContent, allFiles) {
       html += `<table class="metadata-table">
                         <tbody>
                             <tr><td><strong>${t("trigger_type_label")}</strong></td><td>${escapeHtml(
-                              timerData.triggerType || "N/A"
-                            )}</td></tr>
+        timerData.triggerType || "N/A"
+      )}</td></tr>
                             <tr><td><strong>${t("schedule_date_label")}</strong></td><td>${escapeHtml(
-                              timerData.yearValue || "????"
-                            )}-${escapeHtml(
+        timerData.yearValue || "????"
+      )}-${escapeHtml(
         timerData.monthValue || "??"
       )}-${escapeHtml(timerData.dayValue || "??")}</td></tr>
                             <tr><td><strong>${t("schedule_time_label")}</strong></td><td>${escapeHtml(
-                              timerData.hourValue || "??"
-                            )}:${escapeHtml(
+        timerData.hourValue || "??"
+      )}:${escapeHtml(
         timerData.minutesValue || "??"
       )}</td></tr>
                             <tr><td><strong>${t("timezone_label")}</strong></td><td>${escapeHtml(
-                              timerData.timeZone || "N/A"
-                            )}</td></tr>
+        timerData.timeZone || "N/A"
+      )}</td></tr>
                             <tr><td><strong>${t("cron_expression_label")}</strong></td><td><div class="code-block">${escapeHtml(
-                              cronExpression
-                            )}</div></td></tr>
+        cronExpression
+      )}</div></td></tr>
                         </tbody>
                      </table>`;
     } else {
@@ -565,9 +565,8 @@ function buildJsonTree(obj, name = "") {
   if (hasChildren) {
     const icon = `<span class="tree-node-icon">▼</span>`;
     content = icon + content;
-    content += ` <span class="json-info">${
-      Array.isArray(obj) ? `[${obj.length}]` : `{${Object.keys(obj).length}}`
-    }</span>`;
+    content += ` <span class="json-info">${Array.isArray(obj) ? `[${obj.length}]` : `{${Object.keys(obj).length}}`
+      }</span>`;
   } else {
     content += `: <span class="json-value">${escapeHtml(
       JSON.stringify(obj)
@@ -911,6 +910,13 @@ async function buildContentPackageView(packageData, allFilesContent) {
     endpointsHeader.textContent = t("iflow_endpoints_header");
     container.appendChild(endpointsHeader);
 
+    // Botão de exportação para Excel
+    const exportBtn = document.createElement("button");
+    exportBtn.textContent = "📤 Exportar para Excel";
+    exportBtn.className = "excel-export-button";
+    exportBtn.style.margin = "10px 0";
+    exportBtn.onclick = () => exportEndpointsToExcel();
+    container.appendChild(exportBtn);
     const endpointsTable = document.createElement("table");
     endpointsTable.className = "metadata-table endpoints-table";
     let html =
@@ -924,13 +930,12 @@ async function buildContentPackageView(packageData, allFilesContent) {
       if (endpoints.length > 0) {
         endpoints.forEach((endpoint, index) => {
           html += `<tr>
-                        ${
-                          index === 0
-                            ? `<td rowspan="${endpoints.length}">${escapeHtml(
-                                iflow.displayName
-                              )}</td>`
-                            : ""
-                        }
+                        ${index === 0
+              ? `<td rowspan="${endpoints.length}">${escapeHtml(
+                iflow.displayName
+              )}</td>`
+              : ""
+            }
                         <td>${escapeHtml(endpoint.name)}</td>
                         <td>${escapeHtml(endpoint.role)}</td>
                         <td>${escapeHtml(endpoint.protocol)}</td>
@@ -1081,6 +1086,15 @@ async function extractIFlowEndpoints(iflowZipContent) {
               if (key === "httpAddressWithoutQuery") {
                 httpAddrParticipant = value;
               }
+              if (key === "urlPath") {
+        urlPath = value;
+      }
+      if (key === "QueueName_outbound") {
+        queueNameOutbound = value;
+      }
+      if (key === "topic") {
+        kafkaTopic = value;
+      }
             }
           }
         }
@@ -1091,34 +1105,48 @@ async function extractIFlowEndpoints(iflowZipContent) {
           !["None", "Not Applicable"].includes(messageProtocol)
         ) {
           endpoint.protocol = messageProtocol;
-
         } else if (
           transportProtocol &&
           !["None", "Not Applicable"].includes(transportProtocol)
         ) {
           endpoint.protocol = transportProtocol;
-
         } else if (
           componentType &&
           !["None", "Not Applicable"].includes(componentType)
         ) {
           endpoint.protocol = componentType;
-
         }
 
+        // Define o endereço com base no ComponentType
         if (
+          componentType === "HTTPS" &&
+          urlPath &&
+          !["None", "Not Applicable"].includes(urlPath)
+        ) {
+          endpoint.address = urlPath;
+        } else if (
+          componentType === "JMS" &&
+          queueNameOutbound &&
+          !["None", "Not Applicable"].includes(queueNameOutbound)
+        ) {
+          endpoint.address = queueNameOutbound;
+        } else if (
+          componentType === "Kafka" &&
+          kafkaTopic &&
+          !["None", "Not Applicable"].includes(kafkaTopic)
+        ) {
+          endpoint.address = kafkaTopic;
+        } else if (
           addressParticipant &&
           !["None", "Not Applicable"].includes(addressParticipant)
         ) {
           endpoint.address = addressParticipant;
-          
         } else if (
           httpAddrParticipant &&
           !["None", "Not Applicable"].includes(httpAddrParticipant)
         ) {
           endpoint.address = httpAddrParticipant;
         }
-
         participants.push(endpoint);
 
       }
@@ -1143,4 +1171,20 @@ function escapeHtml(unsafe) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+/**
+ * Exporta a tabela de endpoints para um arquivo Excel.
+ */
+function exportEndpointsToExcel() {
+  const table = document.querySelector(".endpoints-table");
+  if (!table) {
+    alert("Tabela de endpoints não encontrada.");
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.table_to_sheet(table);
+  XLSX.utils.book_append_sheet(wb, ws, "Endpoints");
+  XLSX.writeFile(wb, "endpoints_iflow.xlsx");
 }

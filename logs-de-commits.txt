@@ -1,0 +1,2 @@
+[2025-08-06 01:01] Atualiza√ß√£o local com git pull
+[2025-08-06 01:05] Ajuste no de/para do relat¢rio "Integration Endpoints (iFlows)" / Inclus∆o do bot∆o exportar para o relat¢iro "Integration Endpoints (iFlows)". 
