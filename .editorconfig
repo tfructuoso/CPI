@@ -1,0 +1,18 @@
+root = true
+
+[*]
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# Código e arquivos de configuração - LF
+[*.{js,ts,jsx,tsx,json,html,css,scss,md,yml,yaml,sh,groovy,xml,xsl,xsd,edmx,xslt,mmap,propdef,project,iflw}]
+end_of_line = lf
+indent_style = space
+indent_size = 2
+
+# Scripts Windows - CRLF
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+indent_style = space
+indent_size = 2
