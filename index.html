@@ -52,6 +52,7 @@
               type="file"
               id="fileInput"
               accept=".zip"
+              multiple
             />
             <p style="margin-top: 15px; color: #666" data-i18n="supports_zip">
               Suporta: Pacotes .zip do SAP CPI
@@ -59,9 +60,14 @@
           </div>
         </div>
 
-        <div id="downloadSection" class="result-section" style="display: none; text-align: center;">
-          <button id="downloadBtn" class="download-btn" data-i18n="download_decoded">⬇️ Baixar Recursos Decodificados</button>
-          <button id="refreshBtn" class="download-btn" data-i18n="refresh" title="Refresh">🔄</button>
+        <!-- Área de ações gerais (fora dos pacotes) -->
+        <div id="downloadSection" class="result-section" style="text-align: center;">
+          <!-- Download global antigo fica escondido; usamos download por pacote -->
+          <button id="downloadBtn" class="download-btn" style="display:none" data-i18n="download_decoded">⬇️ Baixar Recursos Decodificados</button>
+          <!-- Refresh global permanece visível -->
+          <button id="refreshBtn" class="download-btn" data-i18n="refresh" title="Limpar resultados e começar de novo">🔄 Refresh</button>
+          <!-- Novo botão de Relatório Geral -->
+          <button id="btnGlobalReport" class="download-btn" title="Exporta um relatório com endpoints de todos os pacotes">📊 Relatório Geral (Excel)</button>
         </div>
 
         <div id="results" class="results"></div>
@@ -111,7 +117,11 @@
     <script src="js/globals.js"></script>
     <script src="js/editor.js"></script>
     <script src="js/fileLoader.js"></script>
-    <script src="js/uiHandlers.js"></script>
+    <!-- XLSX precisa estar carregado ANTES do relatório geral -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Script do Relatório Geral -->
+    <script src="js/global_report_all_packages.js"></script>
+    <!-- Seu script de handlers da UI (deixe por último) -->
+    <script src="js/uiHandlers.js"></script>
   </body>
 </html>
