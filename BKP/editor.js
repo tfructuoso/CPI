@@ -21,7 +21,7 @@ function initializeMonacoEditor(content, resourceName, baseFiles = {}) {
     );
   }
 
-  loadContentIntoMonaco(content, resourceName, baseFiles); 
+  loadContentIntoMonaco(content, resourceName, baseFiles);
 }
 
 function loadContentIntoMonaco(content, resourceName, baseFiles = {}) {
@@ -909,29 +909,6 @@ async function buildContentPackageView(packageData, allFilesContent) {
     const endpointsHeader = document.createElement("h2");
     endpointsHeader.textContent = t("iflow_endpoints_header");
     container.appendChild(endpointsHeader);
-    // Botão para exportar relatório oculto (gera Excel sem depender da tabela renderizada)
-    const hiddenExportBtn = document.createElement("button");
-    hiddenExportBtn.textContent = "📤 Relatório Completo";
-    hiddenExportBtn.className = "excel-export-button";
-    hiddenExportBtn.style.margin = "10px 0";
-    hiddenExportBtn.onclick = async () => {
-      try {
-        await exportHiddenEndpointsToExcel(packageData, allFilesContent);
-      } catch (e) {
-        console.error("Falha ao exportar relatório oculto:", e);
-        alert("Falha ao exportar relatório oculto. Veja o console para detalhes.");
-      }
-    };
-    container.appendChild(hiddenExportBtn);
-
-    /*
-    // Botão de exportação para Excel
-    const exportBtn = document.createElement("button");
-    exportBtn.className = "excel-export-button";
-    exportBtn.style.margin = "10px 0";
-    exportBtn.onclick = () => exportEndpointsToExcel();
-    container.appendChild(exportBtn);
-    */
 
     // Botão de exportação para Excel
     const exportBtn = document.createElement("button");
@@ -941,7 +918,6 @@ async function buildContentPackageView(packageData, allFilesContent) {
     exportBtn.onclick = () => exportEndpointsToExcel();
     container.appendChild(exportBtn);
     const endpointsTable = document.createElement("table");
-
     endpointsTable.className = "metadata-table endpoints-table";
     let html =
       `<thead><tr><th>${t("endpoint_table_iflow")}</th><th>${t("endpoint_table_participant")}</th><th>${t("endpoint_table_role")}</th><th>${t("endpoint_table_protocol")}</th><th>${t("endpoint_table_address")}</th></tr></thead><tbody>`;
@@ -1085,24 +1061,15 @@ async function extractIFlowEndpoints(iflowZipContent) {
         let addressParticipant = "";
         let httpAddrParticipant = "";
 
-        let urlPath = "";
-      let queueNameOutbound = "";
-      let kafkaTopic = "";
-      let operationValue = "";
-      let resourcePathVal = "";
-      let queryOptionsVal = "";
-      let customQueryOptionsVal = "";
-      let descriptionVal = "";
-      // **LÓGICA CORRIGIDA para extrair propriedades do modelo bpmn-js**
-        
-for (const prop of properties) {
-  if (prop.$type === "ifl:property" && prop.$children) {
-    const keyNode = prop.$children.find((c) => c.$type === "key");
-    const valueNode = prop.$children.find((c) => c.$type === "value");
+        // **LÓGICA CORRIGIDA para extrair propriedades do modelo bpmn-js**
+        for (const prop of properties) {
+          if (prop.$type === "ifl:property" && prop.$children) {
+            const keyNode = prop.$children.find((c) => c.$type === "key");
+            const valueNode = prop.$children.find((c) => c.$type === "value");
 
-    if (keyNode && valueNode) {
-      const key = keyNode.$body;
-      const value = valueNode.$body;
+            if (keyNode && valueNode) {
+              const key = keyNode.$body;
+              const value = valueNode.$body;
 
               if (key === "MessageProtocol") {
                 messageProtocol = value;
@@ -1119,6 +1086,15 @@ for (const prop of properties) {
               if (key === "httpAddressWithoutQuery") {
                 httpAddrParticipant = value;
               }
+              if (key === "urlPath") {
+        urlPath = value;
+      }
+      if (key === "QueueName_outbound") {
+        queueNameOutbound = value;
+      }
+      if (key === "topic") {
+        kafkaTopic = value;
+      }
             }
           }
         }
@@ -1129,34 +1105,48 @@ for (const prop of properties) {
           !["None", "Not Applicable"].includes(messageProtocol)
         ) {
           endpoint.protocol = messageProtocol;
-
         } else if (
           transportProtocol &&
           !["None", "Not Applicable"].includes(transportProtocol)
         ) {
           endpoint.protocol = transportProtocol;
-
         } else if (
           componentType &&
           !["None", "Not Applicable"].includes(componentType)
         ) {
           endpoint.protocol = componentType;
-
         }
 
+        // Define o endereço com base no ComponentType
         if (
+          componentType === "HTTPS" &&
+          urlPath &&
+          !["None", "Not Applicable"].includes(urlPath)
+        ) {
+          endpoint.address = urlPath;
+        } else if (
+          componentType === "JMS" &&
+          queueNameOutbound &&
+          !["None", "Not Applicable"].includes(queueNameOutbound)
+        ) {
+          endpoint.address = queueNameOutbound;
+        } else if (
+          componentType === "Kafka" &&
+          kafkaTopic &&
+          !["None", "Not Applicable"].includes(kafkaTopic)
+        ) {
+          endpoint.address = kafkaTopic;
+        } else if (
           addressParticipant &&
           !["None", "Not Applicable"].includes(addressParticipant)
         ) {
           endpoint.address = addressParticipant;
-          
         } else if (
           httpAddrParticipant &&
           !["None", "Not Applicable"].includes(httpAddrParticipant)
         ) {
           endpoint.address = httpAddrParticipant;
         }
-
         participants.push(endpoint);
 
       }
@@ -1181,4 +1171,20 @@ function escapeHtml(unsafe) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+/**
+ * Exporta a tabela de endpoints para um arquivo Excel.
+ */
+function exportEndpointsToExcel() {
+  const table = document.querySelector(".endpoints-table");
+  if (!table) {
+    alert("Tabela de endpoints não encontrada.");
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.table_to_sheet(table);
+  XLSX.utils.book_append_sheet(wb, ws, "Endpoints");
+  XLSX.writeFile(wb, "endpoints_iflow.xlsx");
 }
