@@ -1,34 +1,57 @@
 @echo off
-cd /d %~dp0
+chcp 65001 >nul
+setlocal enabledelayedexpansion
 
-REM === Gera data e hora formatada ===
-for /f %%a in ('wmic os get localdatetime ^| find "."') do set dt=%%a
-set YYYY=%dt:~0,4%
-set MM=%dt:~4,2%
-set DD=%dt:~6,2%
-set HH=%dt:~8,2%
-set MN=%dt:~10,2%
+echo ==== Subir projeto (commit + push) ====
+git rev-parse --is-inside-work-tree >nul 2>&1 || (
+  echo [ERRO] Nao parece ser um repo Git aqui.
+  exit /b 1
+)
 
-set DATA=%YYYY%-%MM%-%DD%
-set HORA=%HH%:%MN%
+REM Atualiza antes de subir
+call "%~dp0atualizar-projeto.bat"
+if errorlevel 1 exit /b 1
 
-REM === Solicita mensagem de descrição opcional ===
-set /p msg="Digite o que foi alterado: "
-
-REM === Prepara commit automático com data/hora ===
-set COMMIT_MSG=Versão %DATA% %HORA% - %msg%
-
-git add .
-git commit -m "%COMMIT_MSG%"
-git push origin main
-
-REM === Grava log local ===
-echo [%DATA% %HORA%] %msg%>> logs-de-commits.txt
+REM Mensagem de commit
+set MSG=%*
+if "%MSG%"=="" (
+  set /p MSG=Digite a mensagem de commit: 
+)
+if "%MSG%"=="" (
+  for /f "tokens=1-5 delims=/:. " %%a in ("%date% %time%") do (
+    set MSG=Atualizacao %date% %time%
+  )
+)
 
 echo.
-echo ✅ Projeto enviado para o GitHub com sucesso!
-echo 🕒 %COMMIT_MSG%
-echo 📝 Log atualizado em logs-de-commits.txt
+git add -A
+git status --porcelain >nul
+if errorlevel 1 (
+  echo [ERRO] git status retornou um erro inesperado.
+  exit /b 1
+)
 
-pause
-	
+for /f %%c in ('git status --porcelain ^| find /c /v ""') do set COUNT=%%c
+if "%COUNT%"=="0" (
+  echo [INFO] Nao ha alteracoes para commitar.
+) else (
+  git commit -m "%MSG%"
+  if errorlevel 1 (
+    echo [ERRO] Commit falhou.
+    exit /b 1
+  )
+)
+
+echo.
+git push origin main
+if errorlevel 1 (
+  echo [ERRO] Push falhou. Tente:
+  echo   git pull --rebase --autostash origin main
+  echo   git push origin main
+  exit /b 1
+)
+
+echo.
+echo [OK] Projeto enviado com sucesso.
+endlocal
+exit /b 0

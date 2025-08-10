@@ -1,28 +1,31 @@
 @echo off
-cd /d %~dp0
+chcp 65001 >nul
+echo ==== Atualizar projeto (pull --rebase --autostash) ====
+git rev-parse --is-inside-work-tree >nul 2>&1 || (
+  echo [ERRO] Nao parece ser um repo Git aqui.
+  exit /b 1
+)
 
-REM === Gera data e hora formatada ===
-for /f %%a in ('wmic os get localdatetime ^| find "."') do set dt=%%a
-set YYYY=%dt:~0,4%
-set MM=%dt:~4,2%
-set DD=%dt:~6,2%
-set HH=%dt:~8,2%
-set MN=%dt:~10,2%
-
-set DATA=%YYYY%-%MM%-%DD%
-set HORA=%HH%:%MN%
-
-echo.
-echo 🔄 Atualizando projeto do GitHub...
-
-git pull origin main
-
-REM === Grava log local ===
-echo [%DATA% %HORA%] Atualização local com git pull>> logs-de-commits.txt
+REM Garante upstream correto
+git rev-parse --abbrev-ref --symbolic-full-name @{u} >nul 2>&1 || (
+  echo Configurando upstream para origin/main...
+  git branch --set-upstream-to=origin/main main
+)
 
 echo.
-echo ✅ Projeto atualizado com sucesso!
-echo 🕒 %DATA% %HORA%
-echo 📝 Log atualizado em logs-de-commits.txt
+git fetch --all --prune
+echo.
+git pull --rebase --autostash origin main
+if errorlevel 1 (
+  echo.
+  echo [ERRO] Pull/rebase falhou. Se houver conflitos, resolva-os:
+  echo   - edite os arquivos marcados
+  echo   - git add .
+  echo   - git rebase --continue
+  echo   - rode de novo este script
+  exit /b 1
+)
 
-pause
+echo.
+echo [OK] Projeto atualizado com sucesso.
+exit /b 0
