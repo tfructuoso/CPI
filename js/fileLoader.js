@@ -1,38 +1,68 @@
 
-// ===== Suporte a múltiplos pacotes com contexto =====
+// === fileLoader.js (atualizado) ===
+// Suporta múltiplos pacotes com contexto, pacotes colapsáveis, download por pacote,
+// fila de processamento para múltiplos uploads, e refresh global.
+
 window.__cpiPackages = [];
 window.__cpiActivePkgId = null;
 
-function __makePkgId() {
-  return 'pkg_' + Math.random().toString(36).slice(2, 9);
+// ---------- Fila de processamento para uploads ----------
+let __zipQueue = [];
+let __zipProcessing = false;
+
+async function enqueueZip(file, opts = {}) {
+  __zipQueue.push({ file, opts });
+  if (__zipProcessing) return;
+  __zipProcessing = true;
+  try {
+    while (__zipQueue.length) {
+      const { file: f, opts: o } = __zipQueue.shift();
+      await handleZipFile(f, o);
+    }
+  } finally {
+    __zipProcessing = false;
+  }
 }
+
+// ---------- Helpers ----------
+function __makePkgId() { return 'pkg_' + Math.random().toString(36).slice(2, 9); }
 
 function setActivePackage(pkgId) {
   const pkg = window.__cpiPackages.find(p => p.id === pkgId);
   if (!pkg) return;
   window.__cpiActivePkgId = pkgId;
-
-  // Atualiza os "globais" para manter compatibilidade com funções existentes
+  // Atualiza compat com código legado
   fileContents = pkg.fileContents;
   resourcesCntDecoded = pkg.resourcesCntDecoded;
-
-  // Realça visualmente o pacote ativo
+  // Destaque visual
   document.querySelectorAll('.pkg-container').forEach(el => el.classList.remove('pkg-active'));
   if (pkg.container) pkg.container.classList.add('pkg-active');
+}
+
+function injectOnce(id, cssText) {
+  if (document.getElementById(id)) return;
+  const style = document.createElement('style');
+  style.id = id;
+  style.textContent = cssText;
+  document.head.appendChild(style);
 }
 
 function createPackageContainer(zipName) {
   const container = document.createElement('div');
   container.className = 'pkg-container result-section';
+  
 
   const headerBar = document.createElement('div');
   headerBar.className = 'pkg-headerbar';
   container.appendChild(headerBar);
 
-  const header = document.createElement('div');
+  const header = document.createElement('button');
+  header.type = 'button';
   header.className = 'result-title pkg-header';
-  header.textContent = `📦 ${zipName}`;
+  header.setAttribute('aria-expanded', 'false');
+  header.innerHTML = `<span class="pkg-caret">►</span> <span class="pkg-title">📦 ${escapeHtml(zipName)}</span>`;
   headerBar.appendChild(header);
+  header.classList.add("collapsed");
 
   const actions = document.createElement('div');
   actions.className = 'pkg-actions';
@@ -46,26 +76,25 @@ function createPackageContainer(zipName) {
 
   const content = document.createElement('div');
   content.className = 'pkg-content';
+  content.style.display = 'none'; // começa colapsado
   container.appendChild(content);
 
-  // Estilos básicos
-  const style = document.createElement('style');
-  style.textContent = `
+  injectOnce('pkg-collapsible-style', `
     .pkg-container { border: 1px solid #2a2a2a; border-radius: 8px; margin-bottom: 16px; }
     .pkg-headerbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-    .pkg-container .pkg-header { cursor: pointer; }
-    .pkg-container.pkg-active { box-shadow: 0 0 0 2px rgba(100, 180, 255, 0.4) inset; }
+    .pkg-header { cursor: pointer; background: transparent; border: none; color: inherit; padding: 8px 0; text-align: left; }
+    .pkg-container.pkg-active { box-shadow: 0 0 0 2px rgba(100, 180, 255, 0.3) inset; }
     .pkg-actions .download-btn { padding: 6px 10px; border-radius: 8px; border: 1px solid #3a3a3a; background: #1f1f1f; color: #eee; cursor: pointer; }
     .pkg-actions .download-btn:hover { background: #2a2a2a; }
-  `;
-  document.head.appendChild(style);
+    .pkg-caret { display:inline-block; width:1.25em; }
+  `);
 
   results.appendChild(container);
 
   return { container, content, header, actions, downloadBtn };
 }
 
-// ===== Dedup simples por arquivo (nome|tamanho|mtime) =====
+// ---------- Dedup simples (previne duplo clique do mesmo arquivo) ----------
 window.__cpi_lastKey = null;
 window.__cpi_lastTime = 0;
 function fileKey(file) { return `${file.name}|${file.size}|${file.lastModified}`; }
@@ -77,22 +106,22 @@ function isDuplicateCall(key) {
   return false;
 }
 
-// ===== Processamento de único ZIP com contexto =====
-async function handleZipFile(file, { append = undefined } = {}) {
+// ---------- Processamento de um ZIP ----------
+async function handleZipFile(file, { append = undefined, expand = false } = {}) {
   const key = fileKey(file);
   if (isDuplicateCall(key)) return;
 
-  // Decide append automaticamente se não foi especificado
   try {
     const hasContent = results && results.children && results.children.length > 0;
     if (append === undefined) append = hasContent;
   } catch (e) { append = !!append; }
 
-  // Evita corrida dentro da própria função
-  if (handleZipFile.__running) return;
+  if (handleZipFile.__running) {
+    // Se alguém chamar direto sem fila, encaminhamos para fila
+    return enqueueZip(file, { append, expand });
+  }
   handleZipFile.__running = true;
 
-  // Cria o pacote/ctx
   const pkg = {
     id: __makePkgId(),
     name: file.name,
@@ -106,7 +135,6 @@ async function handleZipFile(file, { append = undefined } = {}) {
   try {
     originalZipName = file.name;
 
-    // Cria container do pacote (e limpa tudo se não for append)
     if (!append) {
       results.innerHTML = "";
     }
@@ -115,14 +143,28 @@ async function handleZipFile(file, { append = undefined } = {}) {
     pkg.contentEl = ui.content;
     pkg.downloadBtn = ui.downloadBtn;
 
-    // Ativa esse pacote como atual
     window.__cpiPackages.push(pkg);
     setActivePackage(pkg.id);
 
-    // Header clica -> ativa contexto
-    ui.header.addEventListener('click', () => setActivePackage(pkg.id));
+    // Header: ativa + colapsa/expande
+    ui.header.addEventListener('click', () => {
+      setActivePackage(pkg.id);
+      const expanded = ui.header.getAttribute('aria-expanded') === 'true';
+      ui.header.setAttribute('aria-expanded', String(!expanded));
+      const caret = ui.header.querySelector('.pkg-caret');
+      if (caret) caret.textContent = expanded ? '►' : '▼';
+      ui.content.style.display = expanded ? 'none' : 'block';
+    });
 
-    // Botão Baixar por pacote
+    // Se expand = true (multi upload), já abre
+    if (expand) {
+      ui.header.setAttribute('aria-expanded', 'true');
+      const caret = ui.header.querySelector('.pkg-caret');
+      if (caret) caret.textContent = '▼';
+      ui.content.style.display = 'block';
+    }
+
+    // Botão download por pacote
     if (pkg.downloadBtn) {
       pkg.downloadBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -148,7 +190,6 @@ async function handleZipFile(file, { append = undefined } = {}) {
 
     await Promise.all(promises);
 
-    // Decodifica e monta as seções DENTRO do container do pacote
     const resourcesCnt = pkg.fileContents["resources.cnt"];
     const contentMetadata = pkg.fileContents["contentmetadata.md"];
 
@@ -158,12 +199,11 @@ async function handleZipFile(file, { append = undefined } = {}) {
     if (contentMetadata) {
       processFileWithContext("contentmetadata.md", contentMetadata, pkg);
     }
-
     if (!resourcesCnt && !contentMetadata) {
       displayIflowFileListForContext(pkg);
     }
 
-    // Bind local: clicks em itens de iFlow/recursos abrem com o contexto correto
+    // Clique local em itens do pacote
     pkg.contentEl.addEventListener('click', (e) => {
       const li = e.target.closest('li.script-item');
       if (li && li.dataset.filePath) {
@@ -190,15 +230,17 @@ async function handleZipFile(file, { append = undefined } = {}) {
   }
 }
 
-// ===== Múltiplos ZIPs, sequência, com contexto =====
+// ---------- Múltiplos ZIPs (mantido por compatibilidade) ----------
 async function handleZipFileMultiple(fileList) {
-  for (const file of fileList) {
-    await handleZipFile(file, { append: true });
+  // Agora apenas enfileira, para garantir ordem e não perder nenhum
+  const files = Array.from(fileList || []);
+  const multi = files.length > 1;
+  for (const f of files) {
+    await enqueueZip(f, { append: true, expand: multi });
   }
 }
 
-// ====== Versões com contexto das funções de exibição/abertura ======
-
+// ---------- Versões com contexto para exibição/abertura ----------
 function processFileWithContext(fileName, content, pkg) {
   const resultDiv = document.createElement("div");
   resultDiv.className = "result-section";
@@ -303,12 +345,12 @@ function openIflowFileWithContext(filePath, pkg) {
   }
 }
 
-// ===== Mantém compatibilidade das funções "globais" =====
+// ---------- Compat com funções antigas ----------
 function openResourceInMonaco(resourceId, resourceName, resourceType) {
   const pkg = window.__cpiPackages.find(p => p.id === window.__cpiActivePkgId);
   if (pkg) return openResourceInMonacoWithContext(resourceId, resourceName, resourceType, pkg);
 
-  // Fallback antigo
+  // Fallback legado
   let content;
   let fileName = resourceName;
   if (resourceType && resourceType.toUpperCase() === "CONTENTPACKAGE") {
@@ -337,7 +379,6 @@ function openIflowFile(filePath) {
   const pkg = window.__cpiPackages.find(p => p.id === window.__cpiActivePkgId);
   if (pkg) return openIflowFileWithContext(filePath, pkg);
 
-  // Fallback antigo
   const content = getFileContent(filePath);
   if (!content) { alert(t("file_not_found") + filePath); return; }
   modalTitle.textContent = `📄 ${filePath}`;
@@ -353,63 +394,7 @@ function openIflowFile(filePath) {
   }
 }
 
-// Redirecionadores de compatibilidade
-function processFile(fileName, content) {
-  const pkg = window.__cpiPackages.find(p => p.id === window.__cpiActivePkgId);
-  if (pkg) return processFileWithContext(fileName, content, pkg);
-  // fallback antigo
-  const resultDiv = document.createElement("div");
-  resultDiv.className = "result-section";
-  let processedContent = "";
-  let title = "";
-  try {
-    if (fileName === "contentmetadata.md") {
-      title = t("content_metadata_title");
-      const decoded = atob(content.trim());
-      processedContent = `<div class="code-block">${escapeHtml(decoded)}</div>`;
-    } else if (fileName === "resources.cnt") {
-      title = t("package_resources_title");
-      const decoded = atob(content.trim());
-      const jsonData = JSON.parse(decoded);
-      resourcesCntDecoded = JSON.stringify(jsonData, null, 2);
-      processedContent = `<div class="json-viewer">${formatPackageInfo(jsonData)}</div>`;
-    }
-    if (title) {
-      resultDiv.innerHTML = `<div class="result-title">${title}</div>${processedContent}`;
-      results.appendChild(resultDiv);
-    }
-  } catch (error) {
-    resultDiv.innerHTML = `<div class="result-title error">${t("processing_error_title")}${fileName}</div>` +
-      `<div class="error">${t("error_label")}${error.message}</div>` +
-      `<div class="code-block">${escapeHtml(String(content).substring(0, 500))}...</div>`;
-    results.appendChild(resultDiv);
-  }
-}
-
-function displayIflowFileList() {
-  const pkg = window.__cpiPackages.find(p => p.id === window.__cpiActivePkgId);
-  if (pkg) return displayIflowFileListForContext(pkg);
-
-  const files = Object.keys(fileContents).filter((name) => !name.endsWith("/"));
-  if (files.length === 0) return;
-  const resultDiv = document.createElement("div");
-  resultDiv.className = "result-section";
-  let html = `<div class="result-title">${t("iflow_files_title")}</div>`;
-  html += '<ul class="script-list">';
-  files.forEach((fn) => {
-    const displayName = fn.split("/").pop();
-    html += `<li class="script-item" data-file-path="${fn}">` +
-            `<div class="script-name">${displayName}</div>` +
-            `<div class="script-type">${fn}</div>` +
-            `</li>`;
-  });
-  html += '</ul>';
-  html += `<p style="margin-top: 15px; color: #666; font-style: italic;">${t("file_click_hint")}</p>`;
-  resultDiv.innerHTML = html;
-  results.appendChild(resultDiv);
-}
-
-// ======= Funções utilitárias =======
+// ---------- Utilitários já existentes ----------
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
@@ -439,12 +424,11 @@ function formatPackageInfo(data) {
   return html;
 }
 
-// ====== Download por pacote ======
+// ---------- Download por pacote ----------
 function downloadResourcesForPackage(pkg) {
   const outZip = new JSZip();
   const tasks = [];
 
-  // Usa resources.cnt decodificado (se existir) para nomear/extensões melhor
   let packageInfo = null;
   if (pkg.resourcesCntDecoded) {
     try { packageInfo = JSON.parse(pkg.resourcesCntDecoded); } catch (e) {}
@@ -492,14 +476,13 @@ function downloadResourcesForPackage(pkg) {
       }
     });
   } else {
-    // fallback: exporta tudo que tiver *_content
+    // Fallback: exporta tudo que tiver *_content
     Object.keys(pkg.fileContents).forEach((k) => {
       if (!k.endsWith("_content")) return;
       outZip.file(k.replace(/[\s/\\?%*:|"<>]/g, "_"), pkg.fileContents[k]);
     });
   }
 
-  // Inclui metadados decodificados, se existirem
   try {
     const metadataContent = pkg.fileContents["contentmetadata.md"];
     if (metadataContent) {
@@ -526,28 +509,16 @@ function downloadResourcesForPackage(pkg) {
   });
 }
 
-// ====== Refresh global (limpa tudo) ======
+// ---------- Refresh global ----------
 function globalRefresh() {
-  // Limpa UI
   if (typeof results !== "undefined" && results) {
     results.innerHTML = "";
   }
-  // Zera contexto
   window.__cpiPackages = [];
   window.__cpiActivePkgId = null;
   try { fileContents = {}; } catch(e){}
   try { resourcesCntDecoded = ""; } catch(e){}
 
-  // Esconde seção de download se existir
   const downloadSection = document.getElementById("downloadSection");
-  if (downloadSection) downloadSection.style.display = "none";
+  if (downloadSection) downloadSection.style.display = "block";
 }
-
-// Listener do botão Refresh (com fusível)
-document.addEventListener("DOMContentLoaded", () => {
-  const btn = document.getElementById("refreshBtn");
-  if (btn && !btn.dataset.bound) {
-    btn.dataset.bound = "1";
-    btn.addEventListener("click", globalRefresh);
-  }
-});
