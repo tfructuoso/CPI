@@ -1,10 +1,12 @@
-
 // === fileLoader.js (atualizado) ===
 // Suporta múltiplos pacotes com contexto, pacotes colapsáveis, download por pacote,
 // fila de processamento para múltiplos uploads, e refresh global.
 
 window.__cpiPackages = [];
 window.__cpiActivePkgId = null;
+
+// [PD] --- Partner Directory global ---
+window.__partnerDirectory = { raw: null, flat: {} };
 
 // ---------- Fila de processamento para uploads ----------
 let __zipQueue = [];
@@ -365,7 +367,6 @@ function openResourceInMonaco(resourceId, resourceName, resourceType) {
   modalTitle.textContent = `📄 ${resourceName}`;
   modal.style.display = "block";
   modal.classList.add("show");
-  modal.querySelector(".modal-content").classList.add("show");
   if (!monacoEditor) {
     require(["vs/editor/editor.main"], function () {
       initializeMonacoEditor(content, fileName, fileContents);
@@ -384,7 +385,6 @@ function openIflowFile(filePath) {
   modalTitle.textContent = `📄 ${filePath}`;
   modal.style.display = "block";
   modal.classList.add("show");
-  modal.querySelector(".modal-content").classList.add("show");
   if (!monacoEditor) {
     require(["vs/editor/editor.main"], function () {
       initializeMonacoEditor(content, filePath);
@@ -521,4 +521,57 @@ function globalRefresh() {
 
   const downloadSection = document.getElementById("downloadSection");
   if (downloadSection) downloadSection.style.display = "block";
+
+  // [PD] limpa partner directory carregado
+  window.__partnerDirectory = { raw: null, flat: {} };
+  const el = document.getElementById('pdStatus');
+  if (el) { el.style.display = 'none'; el.textContent = ''; }
 }
+
+// [PD] ---------- Partner Directory: leitura e flatten ----------
+function __flattenPartnerDirectory(pdObj) {
+  const out = {};
+  if (!pdObj || typeof pdObj !== 'object') return out;
+  Object.keys(pdObj).forEach(group => {
+    const entry = pdObj[group];
+    if (entry && typeof entry === 'object') {
+      Object.keys(entry).forEach(k => {
+        out[k] = entry[k];
+      });
+    }
+  });
+  return out;
+}
+
+async function handlePartnerDirectoryFile(file) {
+  try {
+    const text = await file.text();
+    const json = JSON.parse(text);
+    const flat = __flattenPartnerDirectory(json);
+    window.__partnerDirectory.raw = json;
+    window.__partnerDirectory.flat = flat;
+    try {
+      const el = document.getElementById('pdStatus');
+      if (el) { el.style.display = 'inline'; el.textContent = `Partner Directory carregado (${Object.keys(flat).length} chaves)`; }
+    } catch(e){}
+    console.log('[PartnerDirectory] carregado:', Object.keys(flat));
+    alert('Partner Directory carregado com sucesso.');
+  } catch (e) {
+    console.error('Falha ao ler PartnerDirectory.json:', e);
+    alert('Falha ao ler PartnerDirectory.json. Verifique o JSON.');
+  }
+}
+
+// [PD] ---------- UI: Upload PartnerDirectory.json ----------
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('uploadPDBtn');
+  const input = document.getElementById('pdInput');
+  if (btn && input) {
+    btn.addEventListener('click', () => input.click());
+    input.addEventListener('change', (ev) => {
+      const f = ev.target.files && ev.target.files[0];
+      if (f) handlePartnerDirectoryFile(f);
+      input.value = '';
+    });
+  }
+});

@@ -1,4 +1,4 @@
-// === Global Endpoints Report (todos os pacotes) — v3.3 (resources.cnt + parameters.prop dentro do iFlow) ===
+// === Global Endpoints Report (todos os pacotes) — v3.4 (params do pacote+iflow + PartnerDirectory ${property.X}) ===
 (function () {
   function log(...args){ try { console.log('[GlobalReport]', ...args); } catch(e){} }
   function alertErr(msg){ try { alert(msg); } catch(e){} }
@@ -12,7 +12,7 @@
     try { return new TextDecoder().decode(x); } catch(e){ try { return String(x); } catch(e2){ return ''; } }
   }
 
-  // --- parser simples de .properties (somente "chave=valor" e ignora comentários)
+  // --- parser simples de .properties
   function parseProps(text){
     const map = {};
     if (!text) return map;
@@ -24,18 +24,16 @@
       if (i < 0) return;
       let k = ln.slice(0, i).trim();
       const v = ln.slice(i+1).trim();
-      // remove BOM se houver
       if (k && k.charCodeAt(0) === 0xFEFF) k = k.slice(1);
       if (k) map[k] = v;
     });
     return map;
   }
 
-  // --- carrega parameters.prop de QUALQUER pasta do ZIP do pacote (ex.: src/main/resources/parameters.prop) — opcional
+  // --- carrega parameters.prop (qualquer pasta) no pacote
   function loadRootParams(pkg){
     if (pkg.__rootParams) return pkg.__rootParams;
 
-    // tenta alguns nomes prováveis
     let entryName = null;
     const candidates = Object.keys(pkg.fileContents).filter(fn => /(^|\/)parameters\.prop$/i.test(fn));
     if (candidates.length) entryName = candidates[0];
@@ -56,15 +54,12 @@
     const JSZip = window.JSZip;
     if (!JSZip) return {};
 
-    // cache por iflow
     if (!pkg.__iflowParams) pkg.__iflowParams = {};
     if (pkg.__iflowParams[iflowKey]) return pkg.__iflowParams[iflowKey];
 
-    // tenta localizar o conteúdo do iFlow: preferir "<id>_content", mas aceita nome base usado no fallback
     let content = pkg.fileContents[iflowKey + '_content'];
-    if (!content && pkg.fileContents[iflowKey]) content = pkg.fileContents[iflowKey]; // caso já venha sem sufixo
+    if (!content && pkg.fileContents[iflowKey]) content = pkg.fileContents[iflowKey];
     if (!content){
-      // tenta descobrir algum *_content cujo nome base coincida
       const cand = Object.keys(pkg.fileContents).find(k => k.endsWith('_content') && k.replace(/_content$/,'') === iflowKey);
       if (cand) content = pkg.fileContents[cand];
     }
@@ -74,7 +69,6 @@
     try {
       zip = await new JSZip().loadAsync(content);
     } catch (e){
-      // se não for zip, não há props internas
       return (pkg.__iflowParams[iflowKey] = {});
     }
 
@@ -82,7 +76,6 @@
     const files = Object.values(zip.files);
     const hitNames = [];
 
-    // Procura por parameters.prop OU *.properties em QUALQUER PASTA do iFlow (ex.: src/main/resources/parameters.prop)
     for (const f of files){
       if (f.dir) continue;
       if (!/(^|\/)parameters\.prop$/i.test(f.name) && !/\.properties$/i.test(f.name)) continue;
@@ -108,13 +101,28 @@
     return Object.assign({}, root, inner);
   }
 
-  // --- substitui {{CHAVE}} usando o mapa (exata; mantém se não achar)
-  function resolvePlaceholders(addr, params){
+  // --- substitui {{CHAVE}} a partir dos .prop
+  function resolvePropPlaceholders(addr, params){
     if (!addr) return addr;
     if (!params) return addr;
     return String(addr).replace(/\{\{([^}]+)\}\}/g, (m, p1) => {
       const key = String(p1).trim();
       if (Object.prototype.hasOwnProperty.call(params, key)) return params[key];
+      return m;
+    });
+  }
+
+  // --- resolve ${property.KEY} usando Partner Directory (se carregado)
+  function resolvePropertyPlaceholders(addr) {
+    if (!addr) return addr;
+    const flat = (window.__partnerDirectory && window.__partnerDirectory.flat) ? window.__partnerDirectory.flat : {};
+    if (!flat || !Object.keys(flat).length) return addr;
+
+    return String(addr).replace(/\$\{property\.([^}]+)\}/g, (m, p1) => {
+      const key = String(p1).trim();
+      if (Object.prototype.hasOwnProperty.call(flat, key)) {
+        return flat[key];
+      }
       return m; // não achou → mantém
     });
   }
@@ -284,10 +292,11 @@
           for (const name of names){
             const endpoints = await extractDetails(pkg.fileContents[name]);
             const iflowDisplay = name.replace(/_content$/, '');
-            // merge params: pacote + params internos do iFlow (pelo nome base)
             const mergedParams = Object.assign({}, rootParams, await loadIflowParams(pkg, iflowDisplay));
             endpoints.forEach(ep => {
-              const addrResolved = resolvePlaceholders(ep.address, mergedParams);
+              const addrResolved = resolvePropertyPlaceholders(
+                resolvePropPlaceholders(ep.address, mergedParams)
+              );
               rows.push([
                 pkg.name, iflowDisplay, ep.participant, ep.role, ep.protocol,
                 ep.description, ep.operation, addrResolved,
@@ -305,13 +314,13 @@
           if (!content) continue;
 
           const endpoints = await extractDetails(content);
-          // merge params: pacote + params internos do iFlow (pelo id) + (fallback pelo displayName, se quiser)
           const mergedParams = Object.assign({}, rootParams, await loadIflowParams(pkg, iflow.id));
-          // Se quiser tentar também pelo displayName:
           if (iflow.displayName) Object.assign(mergedParams, await loadIflowParams(pkg, iflow.displayName));
 
           endpoints.forEach(ep => {
-            const addrResolved = resolvePlaceholders(ep.address, mergedParams);
+            const addrResolved = resolvePropertyPlaceholders(
+              resolvePropPlaceholders(ep.address, mergedParams)
+            );
             rows.push([
               pkg.name, (iflow.displayName || iflow.name || iflow.id),
               ep.participant, ep.role, ep.protocol,

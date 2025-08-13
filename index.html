@@ -64,8 +64,15 @@
         <div id="downloadSection" class="result-section" style="text-align: center;">
           <!-- Download global antigo fica escondido; usamos download por pacote -->
           <!-- <button id="downloadBtn" class="download-btn" style="display:none" data-i18n="download_decoded">⬇️ Baixar Recursos Decodificados</button> -->
+          
+          <!-- NOVO: Upload PartnerDirectory.json -->
+          <button id="uploadPDBtn" class="download-btn" title="Carregar PartnerDirectory.json">📁 Partner Directory (JSON)</button>
+          <input type="file" id="pdInput" accept=".json" style="display:none" />
+          <span id="pdStatus" style="margin-left:8px; color:#8f8; display:none;">Partner Directory carregado</span>
+          
           <!-- Refresh global permanece visível -->
           <button id="refreshBtn" class="download-btn" data-i18n="refresh" title="Limpar resultados e começar de novo">🔄 Refresh</button>
+          
           <!-- Novo botão de Relatório Geral -->
           <button id="btnGlobalReport" class="download-btn" title="Exporta um relatório com endpoints de todos os pacotes">📊 Relatório Geral (Excel)</button>
         </div>
